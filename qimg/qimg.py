@@ -17,8 +17,6 @@ import mimetypes
 import os
 import re
 import secrets
-import shutil
-import subprocess
 import sys
 import threading
 import time
@@ -106,27 +104,40 @@ def cmd_init(a):
     print(f"ок: ник {a.user}, топик {cfg['topic']}" + (", токен сохранён в secrets/" if cred else ""))
 
 
-def kaggle_env():
-    env = dict(os.environ)
-    cred = load_json(os.path.join(SECRETS, "kaggle.json"), None)
-    if cred:
-        if cred.get("token"):
-            env["KAGGLE_API_TOKEN"] = cred["token"]
-        if cred.get("key"):
-            env["KAGGLE_USERNAME"], env["KAGGLE_KEY"] = cred["username"], cred["key"]
-    return env
+KAGGLE_API = "https://api.kaggle.com/v1/kernels.KernelsApiService/"
 
 
-def kaggle(*args, check=True, capture=False):
-    exe = shutil.which("kaggle")
-    if not exe:
-        venv = os.path.join(ROOT, ".venv", "bin", "kaggle")
-        exe = venv if os.path.exists(venv) else None
-    cmd = [exe, *args] if exe else [sys.executable, "-m", "kaggle.cli", *args]
-    r = subprocess.run(cmd, env=kaggle_env(), text=True, capture_output=capture)
-    if check and r.returncode != 0:
-        sys.exit(f"kaggle {' '.join(args)}: код {r.returncode}\n{(r.stderr or '') if capture else ''}")
-    return r
+def kaggle_token():
+    """Токен из окружения или secrets/. Если его нет, заголовок подставляет прокси облачной среды."""
+    tok = os.environ.get("KAGGLE_API_TOKEN")
+    if not tok:
+        cred = load_json(os.path.join(SECRETS, "kaggle.json"), None) or {}
+        tok = cred.get("token")
+    return tok if tok and "proxy" not in tok else None
+
+
+def kapi(method, body, timeout=120):
+    """Прямой вызов Kaggle API (без утилиты kaggle: ей нужен токен локально)."""
+    headers = {"Content-Type": "application/json", "User-Agent": "qimg"}
+    tok = kaggle_token()
+    if tok:
+        headers["Authorization"] = f"Bearer {tok}"
+    req = urllib.request.Request(KAGGLE_API + method, data=json.dumps(body).encode(), headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return json.loads(r.read() or b"{}")
+    except urllib.error.HTTPError as e:
+        try:
+            err = json.loads(e.read()).get("error", {})
+        except ValueError:
+            err = {}
+        raise KaggleError(e.code, err.get("message", str(e))) from None
+
+
+class KaggleError(RuntimeError):
+    def __init__(self, code, msg):
+        super().__init__(f"Kaggle API {code}: {msg}")
+        self.code = code
 
 
 # ---------------- сборка исходника ядра ----------------
@@ -160,20 +171,38 @@ def render(kind, cfg):
 
 
 def kernel_status(kind, cfg):
-    r = kaggle("kernels", "status", f"{cfg['kaggle_user']}/qimg-{kind}", check=False, capture=True)
-    out = (r.stdout + r.stderr).lower()
-    for s in ("running", "queued", "complete", "error", "cancel"):
-        if s in out:
-            return s
-    return "unknown" if r.returncode == 0 else "none"
+    try:
+        r = kapi("GetKernelSessionStatus", {"userName": cfg["kaggle_user"], "kernelSlug": f"qimg-{kind}"})
+    except KaggleError as e:
+        return "none" if e.code in (403, 404) else f"? ({e})"
+    st = (r.get("status") or "unknown").lower()
+    return st + (f": {r['failureMessage']}" if r.get("failureMessage") else "")
 
 
 def push(kind, cfg):
     d = render(kind, cfg)
+    meta = load_json(os.path.join(d, "kernel-metadata.json"), {})
+    body = {"slug": meta["id"], "newTitle": meta["title"], "text": open(os.path.join(d, "kernel.py"), encoding="utf8").read(),
+            "language": "python", "kernelType": "script", "isPrivate": True, "enableGpu": meta["enable_gpu"],
+            "enableTpu": False, "enableInternet": True, "datasetDataSources": [], "competitionDataSources": [],
+            "kernelDataSources": meta["kernel_sources"], "modelDataSources": [], "categoryIds": []}
+    if meta.get("machine_shape"):
+        body["machineShape"] = meta["machine_shape"]
     t = time.time()
-    kaggle("kernels", "push", "-p", d)
+    r = kapi("SaveKernel", body)
+    if r.get("error"):
+        sys.exit(f"Kaggle не принял ядро qimg-{kind}: {r['error']}")
+    print(f"qimg-{kind}: версия {r.get('versionNumber')} — {r.get('url')}")
     log_launch(kind, t)
     return t
+
+
+def quota():
+    """Настоящая квота GPU из Kaggle: (сожжено ч, всего ч, когда обнулится)."""
+    r = kapi("GetAcceleratorQuotaStatistics", {})
+    g = r.get("gpuQuota", {})
+    sec = lambda v: float(str(v or "0s").rstrip("s") or 0)  # noqa: E731
+    return round(sec(g.get("timeUsed")) / 3600, 2), round(sec(g.get("totalTimeAllowed")) / 3600, 1), r.get("quotaRefreshTime")
 
 
 def log_launch(kind, t):
@@ -339,8 +368,21 @@ def cmd_logs(a):
     cfg = load_cfg()
     d = os.path.join(STATE, "output", a.kind)
     os.makedirs(d, exist_ok=True)
-    kaggle("kernels", "output", f"{cfg['kaggle_user']}/qimg-{a.kind}", "-p", d)
-    print(f"вывод в {d}")
+    r = kapi("ListKernelSessionOutput", {"userName": cfg["kaggle_user"], "kernelSlug": f"qimg-{a.kind}"})
+    with open(os.path.join(d, "log.txt"), "w", encoding="utf8") as f:
+        f.write(r.get("log") or "")
+    for fobj in r.get("files") or []:
+        name = fobj.get("fileName", "")
+        if a.all or name.startswith("logs/") or name.endswith((".txt", ".log")):
+            dst = os.path.join(d, name)
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            try:
+                urllib.request.urlretrieve(fobj["url"], dst)
+            except Exception as e:  # noqa: BLE001
+                print(f"  {name}: {e}")
+    print(f"вывод в {d} (файлов в выводе ядра: {len(r.get('files') or [])})")
+    if a.tail:
+        print((r.get("log") or "")[-a.tail:])
 
 
 def cmd_stub(a):
@@ -415,7 +457,11 @@ def cmd_status(a):
         print(f"адрес: {s['url']}")
     if s["last_error"]:
         print(f"последняя ошибка: {s['last_error']}")
-    print(f"квота за неделю: сожжено {s['quota_used_h']} ч, осталось ~{s['quota_left_h']} ч из 30")
+    try:
+        used, total, refresh = quota()
+        print(f"квота GPU (Kaggle): сожжено {used} ч из {total}, обнулится {refresh}")
+    except Exception as e:  # noqa: BLE001
+        print(f"квота по маяку: сожжено {s['quota_used_h']} ч, осталось ~{s['quota_left_h']} ч из 30 ({e})")
     if s["url"] and s["stage"] == "ready":
         try:
             print(json.dumps(api_call(s["url"], cfg, "GET", "/v1/status"), ensure_ascii=False, indent=1))
@@ -701,8 +747,10 @@ def main():
     p = sp.add_parser("kstatus", help="статусы ядер на Kaggle")
     p.add_argument("kinds", nargs="*")
     p.set_defaults(fn=cmd_kstatus)
-    p = sp.add_parser("logs", help="скачать вывод ядра")
+    p = sp.add_parser("logs", help="лог и вывод завершённого ядра")
     p.add_argument("kind", choices=list(KERNELS))
+    p.add_argument("--all", action="store_true", help="скачать все файлы вывода")
+    p.add_argument("--tail", type=int, default=3000)
     p.set_defaults(fn=cmd_logs)
     p = sp.add_parser("render", help="только собрать исходник ядра в build/")
     p.add_argument("kind", choices=list(KERNELS))
