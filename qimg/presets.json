@@ -1,0 +1,31 @@
+{
+  "sizes": {
+    "1:1": [1024, 1024],
+    "4:3": [1184, 896],
+    "3:4": [896, 1184],
+    "3:2": [1248, 832],
+    "2:3": [832, 1248],
+    "16:9": [1376, 768],
+    "9:16": [768, 1376]
+  },
+  "max_area": 1638400,
+  "edit_max_area": 1048576,
+  "upload_max_side": 2048,
+  "up_max_side": 2048,
+  "vae_tiling": {"enabled": true, "tile_size_w": 256, "tile_size_h": 256, "target_overlap": 0.5},
+  "lora_8step": "p_qwen_image_2.1_8step_v0.1.safetensors",
+  "sigmas_8step": [1, 0.9333333, 0.8571429, 0.7692308, 0.6666667, 0.5454545, 0.4, 0.2222222, 0],
+  "alpha_prefix": "This is an RGBA image with transparency. ",
+  "alpha_suffix": ". The image has alpha channel and the background is transparent.",
+  "remove_bg_prompt": "Remove the background completely, keep the main subject exactly as it is",
+  "presets": {
+    "draft":  {"kind": "txt2img", "prio": 2, "n": 2, "steps": 8, "lora8": true, "format": "webp", "rewrite": true, "est_s": 60},
+    "std":    {"kind": "txt2img", "prio": 1, "n": 1, "steps": 28, "cache_mode": "spectrum", "format": "webp", "rewrite": true, "est_s": 72},
+    "hq":     {"kind": "txt2img", "prio": 0, "n": 1, "steps": 40, "format": "png", "rewrite": true, "est_s": 270,
+               "hires": {"enabled": true, "upscaler": "Lanczos", "scale": 1.25, "steps": 16, "denoising_strength": 0.35}},
+    "refine": {"kind": "img2img", "prio": 0, "n": 1, "steps": 28, "cache_mode": "spectrum", "strength": 0.45, "upscale": 1.25, "format": "png", "est_s": 130},
+    "vary":   {"kind": "img2img", "prio": 1, "n": 2, "steps": 8, "lora8": true, "strength": 0.65, "format": "webp", "est_s": 55},
+    "edit":   {"kind": "edit", "prio": 0, "n": 1, "steps": 20, "format": "png", "est_s": 135},
+    "up":     {"kind": "up", "prio": 0, "n": 1, "format": "png", "est_s": 75}
+  }
+}

@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>qimg</title>
+<style>
+:root{--bg:#f6f5f2;--panel:#fff;--ink:#1d1d1b;--mute:#76746e;--line:#e3e1db;--acc:#2f5d50;--acc-ink:#fff;--warn:#a6402b;--ok:#2f7a4f}
+@media (prefers-color-scheme:dark){:root{--bg:#151614;--panel:#1e201d;--ink:#ecebe6;--mute:#9a9890;--line:#30332e;--acc:#7fb8a4;--acc-ink:#10120f;--warn:#e08a74;--ok:#83c79c}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
+header{display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:12px 16px;border-bottom:1px solid var(--line);background:var(--panel);position:sticky;top:0;z-index:5}
+header b{font-size:17px;letter-spacing:.02em}
+.pill{padding:2px 10px;border-radius:99px;border:1px solid var(--line);color:var(--mute);font-size:13px}
+.pill.on{color:var(--ok);border-color:var(--ok)}.pill.err{color:var(--warn);border-color:var(--warn)}
+.sp{flex:1}
+button{font:inherit;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:8px;padding:6px 12px;cursor:pointer}
+button:hover{border-color:var(--mute)}
+button.pri{background:var(--acc);color:var(--acc-ink);border-color:var(--acc)}
+button:disabled{opacity:.5;cursor:default}
+main{max-width:1200px;margin:0 auto;padding:16px}
+.composer{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px}
+textarea{width:100%;min-height:72px;resize:vertical;border:none;outline:none;background:transparent;color:var(--ink);font:inherit}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px}
+select,input[type=number]{font:inherit;padding:5px 6px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink)}
+input[type=number]{width:110px}
+label{color:var(--mute);font-size:14px;display:flex;gap:4px;align-items:center}
+.refs{display:flex;gap:8px;flex-wrap:wrap}
+.ref{position:relative;width:64px;height:64px;border-radius:8px;overflow:hidden;border:1px solid var(--line)}
+.ref img{width:100%;height:100%;object-fit:cover}
+.ref button{position:absolute;top:2px;right:2px;padding:0 6px;font-size:12px}
+.drop{outline:2px dashed var(--acc);outline-offset:4px}
+.tabs{display:flex;gap:4px;margin:18px 0 10px}
+.tabs button.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.feed{display:flex;flex-direction:column;gap:14px}
+.group{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px}
+.gh{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;color:var(--mute);font-size:13px}
+.gh .p{color:var(--ink);font-size:14px;flex:1;min-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.frames{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px;margin-top:8px}
+.frame{border:1px solid var(--line);border-radius:10px;overflow:hidden;background:repeating-conic-gradient(var(--line) 0 25%,transparent 0 50%) 0 0/16px 16px}
+.frame img{display:block;width:100%;height:auto;cursor:zoom-in}
+.ph{aspect-ratio:1;display:flex;align-items:center;justify-content:center;color:var(--mute);background:var(--panel);font-size:13px;flex-direction:column;gap:8px;padding:12px;text-align:center}
+.bar{width:80%;height:6px;background:var(--line);border-radius:3px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--acc);transition:width .4s}
+.acts{display:flex;gap:4px;flex-wrap:wrap;padding:6px;background:var(--panel)}
+.acts button{padding:3px 8px;font-size:13px}
+.gal{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px}
+.log{font:12px/1.4 ui-monospace,monospace;color:var(--mute);white-space:pre-wrap;max-height:160px;overflow:auto;margin-top:8px}
+#lb{position:fixed;inset:0;background:rgba(0,0,0,.85);display:none;align-items:center;justify-content:center;z-index:9;cursor:zoom-out}
+#lb img{max-width:96vw;max-height:96vh}
+.hint{color:var(--mute);font-size:13px}
+</style>
+</head>
+<body>
+<header>
+  <b>qimg</b>
+  <span id="st" class="pill">…</span>
+  <span id="quota" class="hint"></span>
+  <span class="sp"></span>
+  <button id="bUp">Поднять</button>
+  <button id="bDown">Погасить</button>
+</header>
+<main>
+  <div id="launch" class="log" hidden></div>
+  <div class="composer" id="comp">
+    <div class="refs" id="refs"></div>
+    <textarea id="prompt" placeholder="Что нарисовать? Перетащите или вставьте (⌘V) картинку — тогда это инструкция правки."></textarea>
+    <div class="row">
+      <select id="preset"><option value="draft">черновик ×2</option><option value="std">стандарт</option><option value="hq">максимум</option></select>
+      <select id="aspect"></select>
+      <label>кадров <input type="number" id="n" min="1" max="4" placeholder="авто" style="width:70px"></label>
+      <label>сид <input type="number" id="seed" placeholder="случайный"></label>
+      <label><input type="checkbox" id="alpha"> прозрачный фон</label>
+      <label><input type="checkbox" id="rw" checked> разворачивать промпт</label>
+      <span class="sp"></span>
+      <input type="file" id="file" accept="image/*" multiple hidden>
+      <button id="bFile">Картинка…</button>
+      <button class="pri" id="bGo">Рисовать</button>
+    </div>
+  </div>
+  <div class="tabs"><button id="tFeed" class="on">Лента</button><button id="tGal">Галерея на диске</button></div>
+  <div id="feed" class="feed"></div>
+  <div id="gal" class="gal" hidden></div>
+</main>
+<div id="lb"><img alt=""></div>
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+let refs = [];            // [{id, thumb}]
+const groups = new Map(); // id -> view
+let ready = false;
+
+async function j(url, opt) {
+  const r = await fetch(url, opt);
+  const t = await r.text();
+  let d; try { d = JSON.parse(t); } catch { d = {error: t}; }
+  if (!r.ok) throw new Error(d.error || r.status);
+  return d;
+}
+const post = (url, body) => j(url, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body || {})});
+
+// ---------- состояние ядра ----------
+async function pollState() {
+  try {
+    const s = await j("/local/state");
+    const el = $("#st");
+    ready = s.stage === "ready";
+    el.textContent = s.launching ? "запуск…" : s.running ? s.stage : "погашено";
+    el.className = "pill" + (ready ? " on" : s.last_error ? " err" : "");
+    el.title = s.last_error || s.url || "";
+    $("#quota").textContent = `квота: ${s.quota_used_h} ч из 30`;
+    $("#bUp").disabled = s.running || s.launching;
+    $("#bDown").disabled = !s.running;
+    const L = $("#launch");
+    L.hidden = !(s.launching || (s.launch_log.length && !ready));
+    L.textContent = s.launch_log.join("\n");
+    if (!$("#aspect").options.length) {
+      for (const a of Object.keys(s.presets.sizes)) $("#aspect").add(new Option(a, a));
+    }
+    if (ready && !groups.size) loadFeed();
+  } catch (e) { $("#st").textContent = "клиент?"; }
+}
+$("#bUp").onclick = () => post("/local/up").then(pollState);
+$("#bDown").onclick = () => confirm("Погасить ядро?") && post("/local/down").then(pollState);
+
+// ---------- входные картинки ----------
+function renderRefs() {
+  $("#refs").innerHTML = refs.map((r, i) => `<div class="ref"><img src="${r.thumb}"><button data-i="${i}">×</button></div>`).join("");
+  $("#refs").querySelectorAll("button").forEach(b => b.onclick = () => { refs.splice(+b.dataset.i, 1); renderRefs(); });
+  $("#prompt").placeholder = refs.length ? "Что изменить? (инструкция правки)" : "Что нарисовать? Перетащите или вставьте (⌘V) картинку — тогда это инструкция правки.";
+}
+async function addFiles(files) {
+  for (const f of files) {
+    if (!f.type.startsWith("image/") || refs.length >= 3) continue;
+    const b64 = await new Promise(res => { const r = new FileReader(); r.onload = () => res(r.result); r.readAsDataURL(f); });
+    try {
+      const u = await post("/api/v1/upload", {b64, name: f.name});
+      refs.push({id: u.id, thumb: b64}); renderRefs();
+    } catch (e) { alert("Загрузка: " + e.message); }
+  }
+}
+$("#bFile").onclick = () => $("#file").click();
+$("#file").onchange = e => addFiles(e.target.files);
+const comp = $("#comp");
+comp.ondragover = e => { e.preventDefault(); comp.classList.add("drop"); };
+comp.ondragleave = () => comp.classList.remove("drop");
+comp.ondrop = e => { e.preventDefault(); comp.classList.remove("drop"); addFiles(e.dataTransfer.files); };
+document.addEventListener("paste", e => {
+  const fs = [...e.clipboardData.items].filter(i => i.type.startsWith("image/")).map(i => i.getAsFile());
+  if (fs.length) { e.preventDefault(); addFiles(fs); }
+});
+
+// ---------- заказы ----------
+async function submit(req) {
+  try {
+    const g = await post("/api/v1/jobs", req);
+    groups.set(g.id, g); renderFeed(); track(g.id);
+  } catch (e) { alert(e.message); }
+}
+$("#bGo").onclick = () => {
+  const prompt = $("#prompt").value.trim();
+  const n = +$("#n").value || undefined, seed = $("#seed").value === "" ? undefined : +$("#seed").value;
+  if (refs.length) submit({preset: "edit", refs: refs.map(r => r.id), prompt, alpha: $("#alpha").checked, seed});
+  else if (prompt) submit({preset: $("#preset").value, prompt, aspect: $("#aspect").value, n, seed,
+                           alpha: $("#alpha").checked, rewrite: $("#rw").checked});
+};
+$("#prompt").onkeydown = e => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) $("#bGo").click(); };
+
+const tracking = new Set();
+async function track(gid) {
+  if (tracking.has(gid)) return;
+  tracking.add(gid);
+  while (true) {
+    try {
+      const g = await j("/api/v1/jobs/" + gid);
+      groups.set(gid, g); renderFeed();
+      if (g.status === "done") break;
+    } catch (e) {}
+    await new Promise(r => setTimeout(r, 2000));
+  }
+  tracking.delete(gid);
+}
+async function loadFeed() {
+  try {
+    const list = await j("/api/v1/jobs");
+    for (const g of list) { groups.set(g.id, g); if (g.status !== "done") track(g.id); }
+    renderFeed();
+  } catch (e) {}
+}
+
+const NAMES = {draft: "черновик", std: "стандарт", hq: "максимум", refine: "дорисовка", vary: "похожие", edit: "правка", up: "×4"};
+function frameHTML(g, f) {
+  if (f.status === "done") {
+    const src = f.local ? "/local/img/" + encodeURI(f.local) : "/api/v1/files/" + f.file;
+    return `<div class="frame"><img src="${src}" loading="lazy" title="сид ${f.seed}">
+      <div class="acts" data-id="${f.file}">
+        <button data-a="ref">изменить</button><button data-a="refine">дорисовать</button>
+        <button data-a="up">×4</button><button data-a="vary">похожие</button><button data-a="rmbg">убрать фон</button>
+      </div></div>`;
+  }
+  const pct = Math.round((f.progress || 0) * 100);
+  const label = f.status === "waiting" ? "переписываю промпт…" : f.status === "queued" ? "в очереди" :
+                f.status === "running" ? `рисую ${pct}%` : f.status === "failed" ? "ошибка: " + esc(f.error) : "отменено";
+  return `<div class="frame"><div class="ph">${label}${f.status === "running" ? `<div class="bar"><i style="width:${pct}%"></i></div>` : ""}</div></div>`;
+}
+function renderFeed() {
+  const list = [...groups.values()].sort((a, b) => b.created - a.created);
+  $("#feed").innerHTML = list.map(g => `<div class="group">
+      <div class="gh"><span>${NAMES[g.preset] || g.preset}</span><span class="p" title="${esc(g.prompt_used)}">${esc(g.prompt)}</span>
+      <span>${g.aspect}${g.alpha ? " · альфа" : ""}</span>
+      ${g.status !== "done" ? `<button data-cancel="${g.id}">отмена</button>` : ""}</div>
+      <div class="frames">${g.jobs.map(f => frameHTML(g, f)).join("")}</div></div>`).join("") ||
+    `<p class="hint">${ready ? "Пока пусто." : "Ядро погашено. «Поднять» — 5–7 минут холодного старта."}</p>`;
+}
+async function frameAction(a, id, thumb) {
+  if (a === "ref") { if (refs.length < 3) { refs.push({id, thumb}); renderRefs(); scrollTo(0, 0); } return; }
+  if (a === "refine") return submit({preset: "refine", src: id});
+  if (a === "up") return submit({preset: "up", src: id});
+  if (a === "vary") return submit({preset: "vary", src: id});
+  if (a === "rmbg") return submit({preset: "edit", refs: [id], prompt: "", alpha: true});
+}
+$("#feed").onclick = e => {
+  const b = e.target.closest("button");
+  if (b?.dataset.cancel) return post("/api/v1/cancel/" + b.dataset.cancel);
+  if (b?.dataset.a) return frameAction(b.dataset.a, b.parentElement.dataset.id, b.closest(".frame").querySelector("img").src);
+  if (e.target.tagName === "IMG") openLB(e.target.src);
+};
+
+// ---------- галерея на диске ----------
+async function loadGal() {
+  const items = await j("/local/gallery");
+  $("#gal").innerHTML = items.map(it => `<div class="frame"><img src="/local/img/${encodeURI(it.path)}" loading="lazy" title="${esc(it.prompt)}">
+    <div class="acts" data-path="${esc(it.path)}"><button data-a="ref">изменить</button><button data-a="refine">дорисовать</button>
+    <button data-a="up">×4</button><button data-a="vary">похожие</button><button data-a="rmbg">убрать фон</button></div></div>`).join("")
+    || `<p class="hint">На диске пока ничего нет.</p>`;
+}
+$("#gal").onclick = async e => {
+  const b = e.target.closest("button");
+  if (b?.dataset.a) {
+    if (!ready) return alert("Сначала поднимите ядро.");
+    try {
+      const {id} = await post("/local/reupload", {path: b.parentElement.dataset.path});
+      await frameAction(b.dataset.a, id, b.closest(".frame").querySelector("img").src);
+      if (b.dataset.a !== "ref") $("#tFeed").click();
+    } catch (err) { alert(err.message); }
+  } else if (e.target.tagName === "IMG") openLB(e.target.src);
+};
+$("#tFeed").onclick = () => { $("#tFeed").classList.add("on"); $("#tGal").classList.remove("on"); $("#feed").hidden = false; $("#gal").hidden = true; };
+$("#tGal").onclick = () => { $("#tGal").classList.add("on"); $("#tFeed").classList.remove("on"); $("#feed").hidden = true; $("#gal").hidden = false; loadGal(); };
+
+function openLB(src) { $("#lb img").src = src; $("#lb").style.display = "flex"; }
+$("#lb").onclick = () => $("#lb").style.display = "none";
+
+pollState(); setInterval(pollState, 5000); renderFeed();
+</script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+secrets/
+config.json
+state/
+out/
+build/
+.venv/
+__pycache__/
